@@ -4,6 +4,8 @@
 
 Minimal reproduction of an issue with `aws_codebuild_webhook` where renaming a GitHub repository breaks the webhook without any detectable Terraform drift, and requires manual intervention to restore.
 
+This repo now includes the Terraform workaround recommended by the AWS provider maintainers: the CodeBuild webhook is replaced whenever the CodeBuild project source repository URL changes.
+
 > **Note:**
 > This repo is already in the post-rename state. It was originally created as:
 
@@ -22,7 +24,7 @@ Renaming a GitHub repository breaks the webhook created by AWS CodeBuild.
 * CodeBuild stops triggering builds
 * Terraform reports no drift (`plan -refresh-only`)
 * Updating the repo URL alone does not fix the issue
-* Webhook must be explicitly recreated
+* Webhook must be explicitly recreated, or configured to replace when the source URL changes
 
 ---
 
@@ -98,15 +100,22 @@ This creates a **silent failure mode**.
 
 ---
 
-## The Fix (Required)
+## Workaround Baked Into This Repo
 
-Updating the source location alone is NOT sufficient.
+Updating the source location alone is NOT sufficient unless the webhook is also forced to replace.
 
-You must force recreation of the webhook:
+This repo now does that with `replace_triggered_by`:
 
-```
-terraform destroy -target=aws_codebuild_webhook.example
-terraform apply   -target=aws_codebuild_webhook.example
+```hcl
+resource "aws_codebuild_webhook" "example" {
+  project_name = aws_codebuild_project.example.name
+
+  lifecycle {
+    replace_triggered_by = [
+      aws_codebuild_project.example.source[0].location,
+    ]
+  }
+}
 ```
 
 Result:
@@ -129,16 +138,20 @@ Result:
 5. Rename the GitHub repository
 6. Push commit → no builds triggered
 7. Run `terraform plan -refresh-only` → no drift detected
-8. Update `repo_url` in `terraform.tfvars` → `terraform apply`
-9. Push commit → still no builds triggered
-10. Recreate webhook:
+8. Update `repo_url` in `terraform.tfvars`
+9. Run `terraform plan`
 
 ```
-terraform destroy -target=aws_codebuild_webhook.example
-terraform apply   -target=aws_codebuild_webhook.example
+terraform plan
 ```
 
-→ builds resume
+Expected with the workaround:
+
+* CodeBuild project is updated
+* `aws_codebuild_webhook.example` is replaced
+
+10. Run `terraform apply`
+11. Push commit → builds resume
 
 ---
 
@@ -146,14 +159,14 @@ terraform apply   -target=aws_codebuild_webhook.example
 
 * Missing or invalid webhook should be detected as drift
   OR
-* Webhook should be recreated when repository source changes
+* Webhook should be recreated when repository source changes. This repo now encodes that behavior with `replace_triggered_by`.
 
 ---
 
 ## Actual
 
 * No drift detected after webhook is removed/invalidated
-* Updating repository source does not recreate webhook
+* Updating repository source does not recreate webhook unless lifecycle replacement is explicitly configured
 * CodeBuild stops triggering builds silently
 * Integration appears healthy from AWS/Terraform
 
@@ -176,8 +189,7 @@ Expected behavior:
 
 * Before rename → builds trigger ✅
 * After rename → builds do NOT trigger ❌
-* After repo URL update → still broken ❌
-* After webhook recreate → builds trigger again ✅
+* After repo URL update + Terraform apply with this workaround → builds trigger again ✅
 
 ---
 

@@ -89,6 +89,14 @@ EOF
 
 resource "aws_codebuild_webhook" "example" {
   project_name = aws_codebuild_project.example.name
+
+  lifecycle {
+    # AWS/CodeBuild can keep reporting the webhook as present after GitHub
+    # invalidates it during a repository rename. Recreate it with source changes.
+    replace_triggered_by = [
+      aws_codebuild_project.example.source[0].location,
+    ]
+  }
 }
 
 # --- Outputs ---
