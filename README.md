@@ -12,6 +12,7 @@ This repo now includes the Terraform workaround recommended by the AWS provider 
 * `codebuild-webhook-rename-test`
 * renamed to `codebuild-webhook-rename-test-updated`
 * renamed again to `codebuild-webhook-rename-test-renamed-again`
+* renamed again to `codebuild-webhook-rename-test-renamed-again-and-again`
 
 The steps below describe the full lifecycle from a clean state.
 
@@ -123,6 +124,18 @@ Result:
 * Webhook recreated in GitHub
 * Integration restored
 * Builds trigger again ✅
+
+### Verified workaround result
+
+After renaming the repository from `codebuild-webhook-rename-test-renamed-again` to `codebuild-webhook-rename-test-renamed-again-and-again`, updating `repo_url`, and running Terraform again, the workaround behaved as intended:
+
+* `aws_codebuild_project.example` updated the source URL in place
+* `aws_codebuild_webhook.example` was replaced due to `replace_triggered_by`
+* Terraform applied `1 added, 1 changed, 1 destroyed`
+* A follow-up `terraform plan -detailed-exitcode` reported no changes
+* GitHub showed the recreated webhook on the renamed repository
+
+This confirms the workaround fixes the rename recovery path for this repro: updating the repository URL now also recreates the CodeBuild webhook, instead of leaving the integration silently broken.
 
 ---
 
